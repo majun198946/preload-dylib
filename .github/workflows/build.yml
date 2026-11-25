@@ -1,0 +1,17 @@
+
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -target arm64-apple-ios13.0 -fobjc-arc -dynamiclib -isysroot "$SDK" -framework Foundation -framework UIKit -install_name @executable_path/preload.dylib -O2 -o preload.dylib AISPreloadCert.m
+          file preload.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preload-dylib
+          path: preload.dylib
