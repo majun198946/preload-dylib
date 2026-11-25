@@ -2,7 +2,7 @@ name: build-dylib
 on:
   workflow_dispatch:
 jobs:
-  build:
+  mac:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
@@ -14,5 +14,28 @@ jobs:
           file preload.dylib
       - uses: actions/upload-artifact@v4
         with:
-          name: preload-dylib
+          name: preload-dylib-mac
+          path: preload.dylib
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld unzip curl
+      - name: sdk
+        run: |
+          curl -L -o sdk.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip -q sdk.zip
+          ls -d sdks-master/*.sdk
+      - name: build
+        run: |
+          SDK=$(ls -d sdks-master/iPhoneOS*.sdk | sort -V | tail -1)
+          echo "SDK=$SDK"
+          clang -target arm64-apple-ios13.0 -fuse-ld=lld -fobjc-arc -dynamiclib -isysroot "$SDK" -F"$SDK/System/Library/Frameworks" -framework Foundation -framework UIKit -install_name @executable_path/preload.dylib -O2 -o preload.dylib AISPreloadCert.m
+          file preload.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preload-dylib-linux
           path: preload.dylib
