@@ -141,15 +141,14 @@ static void AISPreloadRun(void) {
         inv.selector = sel;
 
         NSURL *zipURL = [NSURL fileURLWithPath:zipPath];
-        NSError *err = nil;
-        NSError *__autoreleasing *errPtr = &err;
+        NSError * __autoreleasing err = nil;
         id pwdObj = pwd ?: @"";
         id presenterObj = presenter;
 
         [inv setArgument:&zipURL       atIndex:2];
         [inv setArgument:&pwdObj       atIndex:3];
         [inv setArgument:&presenterObj atIndex:4];
-        [inv setArgument:&errPtr       atIndex:5];
+        [inv setArgument:&err          atIndex:5];
         [inv retainArguments];
 
         @try {
