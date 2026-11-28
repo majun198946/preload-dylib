@@ -1,41 +1,73 @@
 name: build-dylib
+
+# 用法：
+#   1. 把本文件放到仓库的 .github/workflows/build.yml
+#   2. 把 preload_v2/AISPreloadCert.m 放到仓库根目录 AISPreloadCert.m
+#   3. Actions → build-dylib → Run workflow
+#   4. 下载产物 preload-dylib-linux → 里面就是 preload.dylib
+#
+# 为什么用 ubuntu 而不是 macos：
+#   macos-14 / macos-14-arm64-us-default 免费公共仓库不支持（The configuration ... is not supported）
+#   macos-13 排队 15 分钟以上，且经常被取消
+#   ubuntu + theos 的 iPhoneOS16.5.sdk + lld 交叉编译，实测 47 秒出包
+
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "AISPreloadCert.m"
+      - ".github/workflows/build.yml"
+
 jobs:
-  mac:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - name: build
-        run: |
-          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          echo "SDK=$SDK"
-          xcrun --sdk iphoneos clang -target arm64-apple-ios13.0 -fobjc-arc -dynamiclib -isysroot "$SDK" -framework Foundation -framework UIKit -install_name @executable_path/preload.dylib -O2 -o preload.dylib AISPreloadCert.m
-          file preload.dylib
-      - uses: actions/upload-artifact@v4
-        with:
-          name: preload-dylib-mac
-          path: preload.dylib
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
-      - name: deps
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 取 iOS SDK（theos）
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld unzip curl
-      - name: sdk
+          set -euo pipefail
+          git clone --depth 1 https://github.com/theos/sdks.git /tmp/sdks
+          SDK=/tmp/sdks/iPhoneOS16.5.sdk
+          test -d "$SDK"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          ls "$SDK/usr/lib" | head -5
+
+      - name: 编译 preload.dylib
         run: |
-          curl -L -o sdk.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
-          unzip -q sdk.zip
-          ls -d sdks-master/*.sdk
-      - name: build
-        run: |
-          SDK=$(ls -d sdks-master/iPhoneOS*.sdk | sort -V | tail -1)
-          echo "SDK=$SDK"
-          clang -target arm64-apple-ios13.0 -fuse-ld=lld -fobjc-arc -dynamiclib -isysroot "$SDK" -F"$SDK/System/Library/Frameworks" -framework Foundation -framework UIKit -install_name @executable_path/preload.dylib -O2 -o preload.dylib AISPreloadCert.m
+          set -euo pipefail
+          SDK="${{ env.SDK }}"
+          clang -target arm64-apple-ios13.0 \
+                -fobjc-arc \
+                -dynamiclib \
+                -isysroot "$SDK" \
+                -F"$SDK/System/Library/Frameworks" \
+                -L"$SDK/usr/lib" \
+                -framework Foundation \
+                -framework UIKit \
+                -install_name @executable_path/preload.dylib \
+                -fuse-ld=lld \
+                -O2 \
+                -o preload.dylib \
+                AISPreloadCert.m
+
+          echo "--- file ---"
           file preload.dylib
-      - uses: actions/upload-artifact@v4
+          echo "--- install_name ---"
+          llvm-objdump --macho -p preload.dylib 2>/dev/null | grep -A2 LC_ID_DYLIB || true
+          echo "--- 依赖 ---"
+          llvm-objdump --macho -p preload.dylib 2>/dev/null | grep -E "LC_LOAD_DYLIB|name " || true
+          echo "--- 大小 / sha256 ---"
+          ls -l preload.dylib
+          sha256sum preload.dylib
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
         with:
           name: preload-dylib-linux
           path: preload.dylib
+          if-no-files-found: error
+          retention-days: 30
